@@ -1,5 +1,6 @@
 # MINHAMEGA
 Simulador de sorteio da Megasena utilizando a biblioteca matter.js. O projeto roda no navegador, basta abrir o arquivo index.html com a pasta static que contém as imagens e o áudio.<br>
+<img width="683" height="898" alt="image" src="https://github.com/user-attachments/assets/4ffd7d6a-f8b8-4ce2-8b7e-1c7f9e04a234" />
 
 ## Versão Online:
 [MinhaMega](https://minhamega.pythonanywhere.com) rodando no pythonanwhere.com.
