@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulador MegaSena</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #1a1a1a; font-family: 'Segoe UI', sans-serif; }
+        #ui-main { position: absolute; top: 20px; width: 100%; display: flex; flex-direction: column; align-items: center; z-index: 10; pointer-events: none; }
+        .main-controls { display: flex; gap: 20px; top: 20%;pointer-events: auto; margin-top: 10px; }
+        /* Painel Lateral com Minimizar */
+        #side-panel { 
+            position: absolute; right: 10px; top: 10px; 
+            background: rgba(0, 0, 0, 0.85); padding: 15px; border-radius: 15px; 
+            display: flex; flex-direction: column; gap: 12px; 
+            border: 1px solid rgba(255,255,255,0.1); z-index: 100; 
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            width: 130px;
+        }
+
+        /* Estado Minimizado */
+        #side-panel.collapsed {
+            width: 35px;
+            height: 35px;
+            padding: 5px;
+            overflow: hidden;
+            background: rgba(0, 0, 0, 0.6);
+        }
+
+        #side-panel.collapsed .slider-group {
+            display: none;
+        }
+
+        #btnTogglePanel {
+            background: none;
+            border: none;
+            color: #f1c40f;
+            cursor: pointer;
+            font-size: 18px;
+            padding: 0;
+            margin-bottom: 5px;
+            align-self: flex-end;
+            pointer-events: auto;
+        }
+
+        .slider-group { display: flex; flex-direction: column; align-items: center; color: white; width: 100%; }
+        label { font-size: 9px; text-transform: uppercase; margin-bottom: 2px; color: #ccc; text-align: center; }
+        span { color: #f1c40f; font-size: 11px; font-weight: bold; }
+        #highlight-container { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 90%; max-width: 500px; height: 65px; display: flex; gap: 8px; z-index: 5; pointer-events: none; }
+
+        .animated-ball { width: 60px; height: 60px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 24px; color: #000; box-shadow: 0 0 25px rgba(255,255,255,0.6); border: 3px solid white; position: fixed; transition: all 1.2s cubic-bezier(0.175, 0.885, 0.32, 1.275); opacity: 0; scale: 0.5; }
+        .animated-ball.show { opacity: 1; scale: 1.2; position: static; }
+        button { padding: 12px 25px; font-weight: bold; border-radius: 30px; border: none; cursor: pointer; color: white; text-transform: uppercase; transition: 0.3s; pointer-events: auto; }
+        #btnLiberar { background: #3498db; }
+        #btnGirar { background: #27ae60; }
+        #btnGirar.active { background: #e74c3c; }
+        h1 { color: white; text-transform: uppercase; letter-spacing: 3px; margin: 0; font-size: 22px; text-shadow: 2px 2px 4px #000; }
+        input[type=range] { width: 100%; cursor: pointer; accent-color: #f1c40f; }
+    </style>
+</head>
+<body>
+     <audio id="audioPlayer" src="static/balls.mp3"></audio>
+
+    <div id="ui-main">
+        <h1>Simulador MegaSena</h1>
+        <div class="main-controls">
+            <button id="btnLiberar">1. Liberar Bolas</button>
+            <button id="btnGirar">2. Girar Globo</button>
+        </div>
+    </div>
+
+    
+    <div id="highlight-container"></div> 
+
+
+    <div id="side-panel">
+        <button id="btnTogglePanel" title="Minimizar/Maximizar">⚙️</button>
+        <div class="slider-group"><label>Velocidade</label><input type="range" id="velGlobo" min="0" max="0.20" step="0.01" value="0.05"><span id="valSpeed">0.05</span></div>
+        <div class="slider-group" title="Elasticidade muito alta pode deixar o sistema instável!!"><label>Elasticidade (Pulo)</label><input type="range" id="elasticidade" min="0.0" max="2.0" step="0.05" value="0.10"><span id="valElast">0.10</span></div>
+        <div class="slider-group"><label>Tamanho das Pás</label><input type="range" id="tamPas" min="20" max="200" step="1" value="80"><span id="valTamPas">80px</span></div>
+        <div class="slider-group"><label>Fric. Estática</label><input type="range" id="fricEstatica" min="0" max="10" step="0.01" value="0.5"><span id="valFricEst">0.50</span></div>
+        <div class="slider-group"><label>Fric. Dinâmica</label><input type="range" id="fricDin" min="0" max="1" step="0.01" value="0.5"><span id="valFricDin">0.50</span></div>
+        <div class="slider-group"><label>Resist. Ar</label><input type="range" id="fricAr" min="0" max="0.1" step="0.001" value="0.01"><span id="valFricAr">0.01</span></div>
+        <div class="slider-group"><label>Gravidade</label><input type="range" id="gravidade" min="0.0" max="10" step="0.1" value="3.0"><span id="valGravidade">3.0</span></div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
+
+    <script>
+        const { Engine, Render, Runner, Bodies, Composite, Body, Events } = Matter;
+        const engine = Engine.create({ positionIterations: 10, velocityIterations: 10 });
+        const world = engine.world;
+        engine.world.gravity.y = 4.0; //1.8; 
+
+        const render = Render.create({
+            element: document.body, engine: engine,
+            options: { width: window.innerWidth, height: window.innerHeight, wireframes: false, background: '#1a1a1a' }
+        });
+
+        Render.run(render);
+        const runner = Runner.create();
+        Runner.run(runner, engine);
+
+        const isMobile = window.innerWidth < 600;
+        const centerX = window.innerWidth / 2;
+        const centerY = window.innerHeight / 2 + (isMobile ? 50 : 80);
+        const radius = isMobile ? Math.min(window.innerWidth * 0.4, 160) : 250;
+        const ballRadius = isMobile ? 10 : 14;
+        const escala = isMobile ? 0.7 : 1;
+
+        const segmentsCount = 120;
+
+        let isRotating = false, rotationAngle = 0, gapClosed = false, drumSegments = [];
+        const columnColors = ['#2ecc71', '#3498db', '#f1c40f', '#e74c3c', '#9b59b6', '#e67e22', '#1abc9c', '#ecf0f1', '#95a5a6', '#f39c12'];
+
+        const sVel = document.getElementById('velGlobo'), 
+            sElast = document.getElementById('elasticidade'), 
+            sTam = document.getElementById('tamPas'), 
+            sFricEstatic = document.getElementById('fricEstatica'), 
+            sFricDin = document.getElementById('fricDin'), 
+            sFricAr = document.getElementById('fricAr'),
+            sGravidade= document.getElementById('gravidade');
+
+        sElast.value = 0.1;
+
+        function syncPhysics() {
+            Composite.allBodies(world).forEach(b => {
+                if (b.idbola) { //} && String(b.id).startsWith('bola')) {
+                    b.restitution = parseFloat(sElast.value);
+                } 
+                b.friction = parseFloat(sFricEstatic.value); 
+                b.frictionStatic = parseFloat(sFricEstatic.value);  
+                b.frictionAir = parseFloat(sFricAr.value);             
+            });
+            document.getElementById('valSpeed').innerText = sVel.value;
+            document.getElementById('valElast').innerText = sElast.value;
+            document.getElementById('valTamPas').innerText = sTam.value + "px";
+            document.getElementById('valFricEst').innerText = sFricEstatic.value;
+            document.getElementById('valFricDin').innerText = sFricDin.value;
+            document.getElementById('valFricAr').innerText = sFricAr.value;
+            document.getElementById('valGravidade').innerText = sGravidade.value;
+            engine.world.gravity.y = sGravidade.value;
+        }
+
+        function updatePaddles() {
+            const h = parseFloat(sTam.value);
+            const paddlesToRemove = drumSegments.filter(s => s.isPaddle);
+            Composite.remove(world, paddlesToRemove);
+            drumSegments = drumSegments.filter(s => !s.isPaddle);
+            for (let i = 0; i < segmentsCount; i++) {
+                const angle = (i / segmentsCount) * Math.PI * 2;
+                const deg = angle * 180 / Math.PI;
+                if (i % 20 === 0 && (!(deg > 200 && deg < 340) || gapClosed)) {
+                    const paddle = Bodies.rectangle(0, 0, 20, h, { isStatic: true, render: { fillStyle: '#fff', opacity: 0.3 } });
+                    paddle.initialAngle = angle; paddle.isPaddle = true; drumSegments.push(paddle); Composite.add(world, paddle);
+                }
+            }
+            syncPhysics();
+        }
+
+        [sVel, sElast, sFricEstatic, sFricDin, sFricAr, sGravidade].forEach(s => s.oninput = syncPhysics);
+        sTam.oninput = updatePaddles;
+
+        // Construção do Globo
+        for (let i = 0; i < segmentsCount; i++) {
+            const angle = (i / segmentsCount) * Math.PI * 2;
+            if (angle * 180 / Math.PI > 200 && angle * 180 / Math.PI < 340) continue; 
+            const segment = Bodies.rectangle(centerX + Math.cos(angle) * radius, centerY + Math.sin(angle) * radius, 16, 35, { isStatic: true, angle: angle + Math.PI / 2, render: { fillStyle: '#333' } });
+            segment.initialAngle = angle; drumSegments.push(segment);
+        }
+        Composite.add(world, drumSegments);
+        updatePaddles();
+
+        // barra que segura as bolas nos tubos
+        const gate = Bodies.rectangle(centerX, centerY - radius -(isMobile?40:80), 2*radius, 10, { isStatic: true, render: { fillStyle: '#e67e22' } });
+        Composite.add(world, gate);
+
+        // Tubos e Bolas
+        const tubeWidth = 32*escala, spacing = 1.35;
+        const startX = centerX - (4.5 * tubeWidth * spacing);
+        for (let col = 0; col < 10; col++) {
+            const x = startX + (col * tubeWidth * spacing);
+            const yBase = centerY - radius - 200*escala;
+            const colColor = columnColors[col];
+            Composite.add(world, [
+                Bodies.rectangle(x - tubeWidth/2, yBase, 3, 220*escala, { isStatic: true, render: { fillStyle: '#444' } }),
+                Bodies.rectangle(x + tubeWidth/2, yBase, 3, 220*escala, { isStatic: true, render: { fillStyle: '#444' } })
+            ]);
+            for (let row = 0; row < 6; row++) {
+                const num = (row * 10) + (col + 1);
+                const ball = Bodies.circle(
+                                x, yBase + 80 - (row * 32), ballRadius, { restitution: isMobile?0.0:0.5, idbola:num, isStatic: true,
+                                render: {
+                                    sprite: {
+                                    texture: "static/images/" + num + ".png",
+                                    xScale:0.5*escala,
+                                    yScale:0.5*escala
+                                    }
+                                }
+                 });
+                //Matter.Body.setMass(ball, 1.0)
+                //Matter.Body.setStatic(ball, false)
+                Composite.add(world, ball);
+            }
+        }
+
+        //local para as bolas sorteadas
+        const posYRelativaResultado = (isMobile ? 50 : 110)
+        const posXRelativaResultado = (isMobile ? 200 : 275)
+        const shelf = Bodies.rectangle(centerX, centerY + radius + posYRelativaResultado, 2*radius+10, 10, { isStatic: true, render: { fillStyle: '#e67e22' } });
+        Composite.add(world, shelf);
+        const shelfRight = Bodies.rectangle(centerX-radius, centerY + radius + posYRelativaResultado, 10, posYRelativaResultado, { isStatic: true, render: { fillStyle: '#e67e22' } });
+        Composite.add(world, shelfRight);
+        const shelfLeft = Bodies.rectangle(centerX+radius, centerY + radius + posYRelativaResultado, 10, posYRelativaResultado, { isStatic: true, render: { fillStyle: '#e67e22' } });
+        Composite.add(world, shelfLeft);
+
+        // Verificação Geométrica (reinsere bolas fora do globo)
+        function checaBolasFora() {
+            const allBalls = Composite.allBodies(world).filter(b => b.idbola);
+            allBalls.forEach(ball => {
+                const dx = ball.position.x - centerX;
+                const dy = ball.position.y - centerY;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+
+                // Reinsere se estiver fora do raio ou fora da tela
+                if (distance > radius + 25 && ball.position.y > (centerY - radius)) {
+                    Body.setPosition(ball, { x: centerX, y: centerY });
+                    Body.setVelocity(ball, { x: 0, y: 0 });
+                }
+            });
+        }
+        setInterval(() => {
+            if (!isRotating) return;
+            checaBolasFora();
+        }, 2000);
+
+        function animateWithdrawal() {
+            const allBalls = Composite.allBodies(world).filter(b => b.idbola);
+ 
+            allBalls.sort((a, b) => b.position.y - a.position.y);
+            const winners = allBalls.slice(0, 6); //.sort((a, b) => parseInt(a.idbola) - parseInt(b.idbola));
+            const container = document.getElementById('highlight-container');
+            container.innerHTML = '';
+            winners.forEach((ball, i) => {
+                Matter.Body.setPosition(ball, { x: centerX  + (i-2.5)*50, y: centerY + radius + posYRelativaResultado - 2*ballRadius }); 
+            });
+            winnerSorted = winners.sort((a, b) => parseInt(a.idbola) - parseInt(b.idbola));
+            winnerSorted.forEach((ball, i) => {
+                const el = document.createElement('div');
+                el.className = 'animated-ball';
+                el.style.backgroundColor = 'yellow';
+                el.innerText = ball.idbola;
+                document.body.appendChild(el);
+                setTimeout(() => { el.classList.add('show'); container.appendChild(el); }, i * 200 + 500);
+            }); 
+
+        }
+
+        document.getElementById('btnLiberar').onclick = function() { 
+            if (this.innerText=="1. LIBERAR BOLAS") {
+                Composite.remove(world, gate); 
+                this.disabled = true; 
+                this.style.opacity = "0.5"
+                const allBalls = Composite.allBodies(world).filter(b => b.idbola);
+                allBalls.forEach(ball => {
+                    Matter.Body.setStatic(ball, false);
+                });
+              setTimeout(() => {
+                  checaBolasFora();
+                  var btn = document.getElementById('btnLiberar');
+                  btn.innerText = 'Reiniciar';
+                  btn.disabled = false; 
+                  btn.style.opacity = null;
+                }, 3000);
+
+            } else {
+                location.reload();
+                return;             
+            }
+        };
+
+        document.getElementById('btnGirar').onclick = function() {
+            if (!isRotating && !gapClosed) {
+                for (let i = 0; i < segmentsCount; i++) {
+                    const angle = (i / segmentsCount) * Math.PI * 2;
+                    if (angle * 180 / Math.PI > 200 && angle * 180 / Math.PI < 340) {
+                        const lid = Bodies.rectangle(0, 0, 16, 35, { isStatic: true, angle: angle + Math.PI / 2, render: { fillStyle: '#555' } });
+                        lid.initialAngle = angle; drumSegments.push(lid); Composite.add(world, lid);
+                    }
+                }
+                gapClosed = true; updatePaddles();
+            }
+            isRotating = !isRotating;
+            this.classList.toggle('active');
+            this.innerText = isRotating ? "Parar e Sortear" : "Girar Globo";
+            if (isRotating) {
+                checaBolasFora();
+                startAudio();
+            } else {
+                stopAudio();
+                this.disabled = true;
+                this.style.opacity = "0.5"
+                setTimeout(function() {document.getElementById('btnGirar').disabled = false; document.getElementById('btnGirar').style.opacity = null;}, 3000);
+            }
+            if (!isRotating) setTimeout(animateWithdrawal, 100);
+            else { 
+                document.querySelectorAll('.animated-ball').forEach(b => b.remove()); 
+                document.getElementById('highlight-container').innerHTML = ''; 
+            }
+        };
+
+        Events.on(engine, 'beforeUpdate', () => {
+            if (isRotating) {
+                rotationAngle += parseFloat(sVel.value);
+                drumSegments.forEach(s => {
+                    const a = s.initialAngle + rotationAngle;
+                    const r = s.isPaddle ? radius - (parseFloat(sTam.value)/2 + 5) : radius;
+                    Body.setPosition(s, { x: centerX + Math.cos(a) * r, y: centerY + Math.sin(a) * r });
+                    Body.setAngle(s, a + Math.PI / 2);
+                });
+            }
+        });
+
+        /*
+        Events.on(render, 'afterRender', () => {
+            const ctx = render.context;
+            
+            Composite.allBodies(world).forEach(b => { //rotina quando tinha label
+                if (0) { //(b.idbola) {
+                    ctx.save(); ctx.translate(b.position.x, b.position.y); ctx.rotate(b.angle);
+                    //ctx.font = "bold 14px Arial"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+                    //ctx.fillStyle = "#000"; 
+                    //ctx.fillText(b.idbola, 0, 0); 
+                    ctx.fillText("", 0, 0); 
+                    ctx.restore();
+                }
+            });
+
+        });
+        */
+
+        if (!isMobile) {
+             window.addEventListener('resize', () => location.reload());
+        }
+        syncPhysics();
+
+        var audio = document.getElementById("audioPlayer");
+
+        function startAudio() {
+          audio.play();
+          audio.loop = true;
+        }
+
+        function stopAudio() {
+          audio.pause();
+          audio.currentTime = 0;
+        }
+
+        // --- LÓGICA DO PAINEL RETRÁTIL ---
+        const panel = document.getElementById('side-panel');
+        const btnToggle = document.getElementById('btnTogglePanel');
+        
+        btnToggle.onclick = () => {
+            panel.classList.toggle('collapsed');
+            btnToggle.innerText = panel.classList.contains('collapsed') ? '⚙️' : '✖';
+        };
+        if (isMobile) { //esconde painel de opçoes se for celular, porque senão encobre o globo
+            btnToggle.onclick();
+        }
+
+    </script>
+</body>
+</html>
