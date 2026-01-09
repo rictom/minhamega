@@ -106,13 +106,17 @@
         const centerY = window.innerHeight / 2 + (isMobile ? 50 : 80);
         const radius = isMobile ? Math.min(window.innerWidth * 0.4, 160) : 250;
         const ballRadius = isMobile ? 10 : 14;
+        const escalaTexture = isMobile ? ballRadius*1.8/72 : ballRadius*1.8/72;
         const escala = isMobile ? 0.7 : 1;
+
 
         const segmentsCount = 120;
 
         let isRotating = false, rotationAngle = 0, gapClosed = false, drumSegments = [];
         const columnColors = ['#2ecc71', '#3498db', '#f1c40f', '#e74c3c', '#9b59b6', '#e67e22', '#1abc9c', '#ecf0f1', '#95a5a6', '#f39c12'];
 
+        Matter.Resolver._restingThresh = 0.001;
+        
         const sVel = document.getElementById('velGlobo'), 
             sElast = document.getElementById('elasticidade'), 
             sTam = document.getElementById('tamPas'), 
@@ -193,8 +197,8 @@
                                 render: {
                                     sprite: {
                                     texture: "static/images/" + num + ".png",
-                                    xScale:0.5*escala,
-                                    yScale:0.5*escala
+                                    xScale:escalaTexture, //0.5*escala,
+                                    yScale:escalaTexture, //0.5*escala
                                     }
                                 }
                  });
@@ -224,8 +228,9 @@
 
                 // Reinsere se estiver fora do raio ou fora da tela
                 if (distance > radius + 25 && ball.position.y > (centerY - radius)) {
-                    Body.setPosition(ball, { x: centerX, y: centerY });
                     Body.setVelocity(ball, { x: 0, y: 0 });
+                    Body.setPosition(ball, { x: centerX + ballRadius*20*(Math.random()-0.5), y: centerY+ ballRadius*20*(Math.random()-0.5) });
+                    
                 }
             });
         }
